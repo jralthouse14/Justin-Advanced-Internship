@@ -11,6 +11,12 @@ import { AiOutlineRead } from "react-icons/ai";
 import { useState, useEffect } from "react";
 import axios from 'axios';
 import { useParams } from 'next/navigation';
+import { auth, db } from "@/app/firebase";
+import { onAuthStateChanged } from 'firebase/auth';
+import { collection, query, where, limit, getDocs } from 'firebase/firestore';
+import { useAuth } from "@/app/AuthContext";
+import LoginModal from "@/app/components/login/page";
+
 
 export default function Book() {
     const [book, setBook] = useState([]);
@@ -18,6 +24,48 @@ export default function Book() {
     const {id} = useParams();
     const [durations, setDurations] = useState({});
     const [loading, setLoading] = useState(true);
+    const {currentUser} = useAuth();
+    const [userRole, setUserRole] = useState("Basic");
+    const [modalOpen, setModalOpen] = useState(false);
+
+    useEffect(() => {
+        const unsubscribe = onAuthStateChanged(auth, async (user) => {
+            const subsRef = collection(
+            db,
+            "customers",
+            user.uid,
+            "subscriptions"
+            );
+    
+            const q = query(
+            subsRef,
+            where("status", "in", ["active", "trialing"]),
+            limit(1)
+            );
+    
+            const subSnapshot = await getDocs(q);
+    
+            if (subSnapshot.empty) {
+            setUserRole("Basic");
+            return;
+            }
+    
+            const subscription = subSnapshot.docs[0].data();
+    
+            const plansByPrice = {
+            price_1U54KhKAZzdmjUI514WTnG9g: "Premium Plus",
+            price_1U54SBKAZzdmjUI5NLeutbw4: "Premium",
+            };
+    
+            setUserRole(
+            plansByPrice[subscription.price] ||
+            subscription.role ||
+            "Basic"
+            );
+        });
+    
+        return () => unsubscribe();
+    }, []);
 
      const handleMetadata = (id, e) => {
         const durationInSeconds = e.currentTarget.duration;
@@ -152,6 +200,25 @@ export default function Book() {
                             </div>
                         </div> 
                     </div>
+                {book.subscriptionRequired === true && userRole !== "premium" && userRole !== "premium-plus" ? (
+                    <>
+                    <div className={styles["book__read--btn-wrapper"]}>
+                        <button className={styles["book__read--btn"]} onClick={() => {currentUser ? window.location.href = "/pages/sales" : setModalOpen(true)}}>
+                            <div className={styles["book__read--icon"]}>
+                                <AiOutlineRead className={styles["book__read--icon-img"]} />
+                            </div>
+                            <div className={styles["book__read--text"]}>Read</div>
+                        </button>
+                        <button className={styles["book__read--btn"]} onClick={() => {currentUser ? window.location.href = "/pages/sales" : setModalOpen(true)}}>
+                            <div className={styles["book__read--icon"]}>
+                                <TbMicrophone className={styles["book__read--icon-img"]} />
+                            </div>
+                            <div className={styles["book__read--text"]}>Listen</div>
+                        </button>
+                    </div>
+                    <LoginModal isOpen={modalOpen} onClose={() => setModalOpen(false)} />
+                    </>
+                ) : (
                     <div className={styles["book__read--btn-wrapper"]}>
                         <button className={styles["book__read--btn"]} onClick={() => window.location.href = `/pages/player/${book.id}`}>
                             <div className={styles["book__read--icon"]}>
@@ -166,6 +233,7 @@ export default function Book() {
                             <div className={styles["book__read--text"]}>Listen</div>
                         </button>
                     </div>
+                )}
                     <h2 className={styles["book__description--header"]}>What's it about?</h2>
                     <div className={styles["book__tag--wrapper"]}>
                     {book.tags?.map((tag, index) => (

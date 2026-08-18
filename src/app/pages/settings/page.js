@@ -9,7 +9,7 @@ import Image from 'next/image';
 import { useAuth } from '../../AuthContext';
 import { auth, db } from "../../firebase";
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, query, where, limit, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, limit, getDocs } from 'firebase/firestore';
 
 export default function Settings() {
     const [modalOpen, setModalOpen] = useState(false);
@@ -19,63 +19,38 @@ export default function Settings() {
 
     useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-        if (!user) {
-            setUserRole("Please log in to view subscription status");
-            setLoading(false);
-            return;
+        const subsRef = collection(
+        db,
+        "customers",
+        user.uid,
+        "subscriptions"
+        );
+
+        const q = query(
+        subsRef,
+        where("status", "in", ["active", "trialing"]),
+        limit(1)
+        );
+
+        const subSnapshot = await getDocs(q);
+
+        if (subSnapshot.empty) {
+        setUserRole("Basic");
+        return;
         }
 
-        try {
-            const subsRef = collection(db, "customers", user.uid, "checkout_sessions");
+        const subscription = subSnapshot.docs[0].data();
 
-            const q = query(
-                subsRef,
-                where("status", "==", "complete"),
-                limit(1)
-            );
+        const plansByPrice = {
+        price_1U54KhKAZzdmjUI514WTnG9g: "Premium Plus",
+        price_1U54SBKAZzdmjUI5NLeutbw4: "Premium",
+        };
 
-            const subSnapshot = await getDocs(q);
-
-            if (subSnapshot.empty) {
-                setUserRole("Basic");
-                setLoading(false);
-                return;
-            }
-
-            const sortedDocs = subSnapshot.docs.sort((a, b) => {
-                const aTime = a.data().created?.toMillis?.() || a.data().created || 0;
-                const bTime = b.data().created?.toMillis?.() || b.data().created || 0;
-                return bTime - aTime;
-            });
-
-            const latestSub = sortedDocs[0].data();
-            
-            const productId = latestSub.metadata?.productId || 
-                              latestSub.productId || 
-                              latestSub.line_items?.[0]?.price?.product ||
-                              latestSub.price?.product;
-
-            if (!productId) {
-                console.warn("Product ID field missing in database document structure:", latestSub);
-                setUserRole("Basic");
-                return;
-            }
-
-            const productRef = doc(db, "products", productId);
-            const productSnap = await getDoc(productRef);
-
-            if (productSnap.exists()) {
-                setUserRole(productSnap.data().role || "Basic");
-            } else {
-                setUserRole("Basic");
-            }
-
-        } catch (error) {
-            console.error("Error reading subscription:", error);
-            setUserRole("Error reading subscription");
-        } finally {
-            setLoading(false);
-        }
+        setUserRole(
+        plansByPrice[subscription.price] ||
+        subscription.role ||
+        "Basic"
+        );
     });
 
     return () => unsubscribe();
@@ -113,8 +88,11 @@ export default function Settings() {
                     <div className={styles.settings__content}>
                         <div className={styles.settings__subtitle}>Your Subscription plan</div>
                         <div className={styles.settings__text}>{userRole}</div>
+                        {userRole === "Basic" ? (
                             <button className={`${styles.button} ${styles.submitButton} ${styles.upgradeButton}`} onClick={() => window.location.href = "/pages/sales"}>Upgrade to Premium</button>
+                        ) : (
                             <div></div>
+                        )}
                     </div>
                     <div className={styles.settings__content}>
                         <div className={styles.settings__subtitle}>Email</div>
